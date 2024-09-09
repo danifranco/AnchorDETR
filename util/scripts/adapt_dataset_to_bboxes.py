@@ -1,9 +1,9 @@
 import os
 import sys
 import argparse
-import glob 
+import glob
 import pandas as pd
-import numpy as np 
+import numpy as np
 from tqdm import tqdm
 from skimage.measure import regionprops
 
@@ -27,7 +27,7 @@ if not os.path.exists(args["input_dir"]):
 if not os.path.exists(args["biapy_dir"]):
     raise FileNotFoundError("{} directory not found".format(args["biapy_dir"]))
 
-# Import some aux functions of BiaPy 
+# Import some aux functions of BiaPy
 sys.path.insert(0, args["biapy_dir"])
 from biapy.data.data_manipulation import read_img_as_ndarray
 from biapy.utils.util import save_tif
@@ -56,7 +56,7 @@ for folder in tqdm(folders):
         mask = read_img_as_ndarray(sample_path, is_3d=False).squeeze()
 
         # Extract all bboxes from instances
-        df = pd.DataFrame(columns=['label','bbox_min_y','bbox_min_y','bbox_min_y','bbox_min_y'])
+        df = pd.DataFrame(columns=['label','bbox_min_y','bbox_min_x','bbox_max_y','bbox_max_x'])
         regions = regionprops(mask)
         for k, props in enumerate(regions):
             miny, minx, maxy, maxx = props.bbox
