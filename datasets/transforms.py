@@ -82,7 +82,7 @@ def hflip(image, target):
     return flipped_image, target
 
 
-def resize(image, target, size, max_size=None):
+def resize(image, target, size, max_size=None, both_dims=False):
     # size can be min_size (scalar) or (w, h) tuple
 
     def get_size_with_aspect_ratio(image_size, size, max_size=None):
@@ -105,13 +105,16 @@ def resize(image, target, size, max_size=None):
 
         return (oh, ow)
 
-    def get_size(image_size, size, max_size=None):
+    def get_size(image_size, size, max_size=None, both_dims=False):
         if isinstance(size, (list, tuple)):
             return size[::-1]
         else:
-            return get_size_with_aspect_ratio(image_size, size, max_size)
+            if not both_dims:
+                return get_size_with_aspect_ratio(image_size, size, max_size)
+            else:
+                return (size,size)
 
-    size = get_size(image.size, size, max_size)
+    size = get_size(image.size, size, max_size, both_dims)
     rescaled_image = F.resize(image, size)
 
     if target is None:
@@ -140,6 +143,36 @@ def resize(image, target, size, max_size=None):
 
     return rescaled_image, target
 
+def square_resize(image, target, size):
+    # size can be min_size (scalar) or (w, h) tuple
+    size = (size, size)
+    rescaled_image = F.resize(image, size)
+
+    if target is None:
+        return rescaled_image, None
+
+    ratios = tuple(float(s) / float(s_orig) for s, s_orig in zip(rescaled_image.size, image.size))
+    ratio_width, ratio_height = ratios
+
+    target = target.copy()
+    if "boxes" in target:
+        boxes = target["boxes"]
+        scaled_boxes = boxes * torch.as_tensor([ratio_width, ratio_height, ratio_width, ratio_height])
+        target["boxes"] = scaled_boxes
+
+    if "area" in target:
+        area = target["area"]
+        scaled_area = area * (ratio_width * ratio_height)
+        target["area"] = scaled_area
+
+    h, w = size
+    target["size"] = torch.tensor([h, w])
+
+    if "masks" in target:
+        target['masks'] = interpolate(
+            target['masks'][:, None].float(), size, mode="nearest")[:, 0] > 0.5
+
+    return rescaled_image, target
 
 def pad(image, target, padding):
     # assumes that we only pad on the bottom right corners
@@ -206,6 +239,15 @@ class RandomResize(object):
     def __call__(self, img, target=None):
         size = random.choice(self.sizes)
         return resize(img, target, size, self.max_size)
+
+class SquareRandomResize(object):
+    def __init__(self, sizes):
+        assert isinstance(sizes, (list, tuple))
+        self.sizes = sizes
+
+    def __call__(self, img, target=None):
+        size = random.choice(self.sizes)
+        return square_resize(img, target, size)
 
 
 class RandomPad(object):
