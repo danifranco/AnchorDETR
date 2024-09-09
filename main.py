@@ -24,7 +24,7 @@ import datasets.samplers as samplers
 from datasets import build_dataset, get_coco_api_from_dataset
 from engine import evaluate, train_one_epoch
 from models import build_model
-
+from util.warmup_cosine_decay import WarmUpCosineDecayScheduler
 
 def get_args_parser():
     parser = argparse.ArgumentParser('AnchorDETR Detector', add_help=False)
@@ -36,13 +36,17 @@ def get_args_parser():
     parser.add_argument('--batch_size', default=1, type=int)
     parser.add_argument('--weight_decay', default=1e-4, type=float)
     parser.add_argument('--epochs', default=50, type=int)
+    parser.add_argument('--scheduler_type', default=["step_lr"], choices=['step_lr', 'warmup_cosine_decay'], type=str)
     parser.add_argument('--lr_drop', default=40, type=int)
     parser.add_argument('--lr_drop_epochs', default=None, type=int, nargs='+')
     parser.add_argument('--clip_max_norm', default=0.1, type=float,
                         help='gradient clipping max norm')
-
     parser.add_argument('--sgd', action='store_true')
 
+    # WarmUpCosineDecay parameters
+    parser.add_argument('--lr_min', default=1e-6, type=float)
+    parser.add_argument('--warmup_epochs', default=1e-6, type=float)
+    
     # Model parameters
     parser.add_argument('--frozen_weights', type=str, default=None,
                         help="Path to the pretrained model. If set, only the mask head will be trained")
@@ -215,6 +219,13 @@ def main(args):
                                       weight_decay=args.weight_decay)
     if args.scheduler_type == "step_lr":
         lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, args.lr_drop)
+    else:
+        lr_scheduler = WarmUpCosineDecayScheduler(
+            lr=args.lr,
+            min_lr=args.lr_min,
+            warmup_epochs=args.warmup_epochs,
+            epochs=args.epochs - args.start_epoch,
+        )
         
     if args.distributed:
         model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu], find_unused_parameters=True)
