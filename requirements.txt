@@ -4,3 +4,5 @@ pycocotools
 tqdm
 cython
 scipy
+scikit-image
+pandas
