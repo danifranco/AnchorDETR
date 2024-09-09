@@ -36,7 +36,7 @@ def get_args_parser():
     parser.add_argument('--batch_size', default=1, type=int)
     parser.add_argument('--weight_decay', default=1e-4, type=float)
     parser.add_argument('--epochs', default=50, type=int)
-    parser.add_argument('--scheduler_type', default=["step_lr"], choices=['step_lr', 'warmup_cosine_decay'], type=str)
+    parser.add_argument('--scheduler_type', default="step_lr", choices=['step_lr', 'warmup_cosine_decay'], type=str)
     parser.add_argument('--lr_drop', default=40, type=int)
     parser.add_argument('--lr_drop_epochs', default=None, type=int, nargs='+')
     parser.add_argument('--clip_max_norm', default=0.1, type=float,
@@ -50,6 +50,10 @@ def get_args_parser():
     # Model parameters
     parser.add_argument('--frozen_weights', type=str, default=None,
                         help="Path to the pretrained model. If set, only the mask head will be trained")
+
+    # SAM2 
+    parser.add_argument('--sam2_checkpoint', default='sam2_hiera_tiny.pt', type=str)
+    parser.add_argument('--sam2_model_cfg', default='sam2_hiera_t.yaml', type=str)
 
     # * Backbone
     parser.add_argument('--backbone', default='resnet50', type=str,
@@ -144,6 +148,9 @@ def main(args):
             raise ValueError("The dilation should be True or False")
     print(args)
 
+    if args.backbone == "sam2":
+        args.num_feature_levels = 3
+
     device = torch.device(args.device)
 
     # fix the seed for reproducibility
@@ -226,17 +233,23 @@ def main(args):
             warmup_epochs=args.warmup_epochs,
             epochs=args.epochs - args.start_epoch,
         )
-        
-    if args.distributed:
-        model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu], find_unused_parameters=True)
-        model_without_ddp = model.module
+    print(f"LR scheduler: {lr_scheduler}")
 
-    if args.dataset_file == "coco_panoptic":
-        # We also evaluate AP during panoptic training, on original coco DS
-        coco_val = datasets.coco.build("val", args)
-        base_ds = get_coco_api_from_dataset(coco_val)
+    if args.distributed:
+        find_unused_parameters = False if args.dataset_file != "cell" else True
+        model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu], 
+            find_unused_parameters=find_unused_parameters)
+        model_without_ddp = model.module
+    
+    if args.dataset_file == "cell":
+        base_ds = None
     else:
-        base_ds = get_coco_api_from_dataset(dataset_val)
+        if args.dataset_file == "coco_panoptic":
+            # We also evaluate AP during panoptic training, on original coco DS
+            coco_val = datasets.coco.build("val", args)
+            base_ds = get_coco_api_from_dataset(coco_val)
+        else:
+            base_ds = get_coco_api_from_dataset(dataset_val)
 
     if args.frozen_weights is not None:
         checkpoint = torch.load(args.frozen_weights, map_location='cpu')

@@ -30,7 +30,7 @@ import copy
 class AnchorDETR(nn.Module):
     """ This is the AnchorDETR module that performs object detection """
 
-    def __init__(self, backbone, transformer,  num_feature_levels, aux_loss=True):
+    def __init__(self, backbone, transformer, num_feature_levels, aux_loss=True):
         """ Initializes the model.
         Parameters:
             backbone: torch module of the backbone to be used. See backbone.py
@@ -46,16 +46,18 @@ class AnchorDETR(nn.Module):
         if num_feature_levels > 1:
             num_backbone_outs = len(backbone.strides)
             input_proj_list = []
+            conv_strides = backbone.conv_strides_to_apply
+            k_sizes = backbone.k_size_strides_to_apply
             for _ in range(num_backbone_outs):
                 in_channels = backbone.num_channels[_]
                 if _ == 0:
                     input_proj_list.append(nn.Sequential(
-                        nn.Conv2d(in_channels, hidden_dim, kernel_size=3, stride=2, padding=1),
+                        nn.Conv2d(in_channels, hidden_dim, kernel_size=k_sizes[_], stride=conv_strides[_], padding=1),
                         nn.GroupNorm(32, hidden_dim),
                     ))
                 else:
                     input_proj_list.append(nn.Sequential(
-                        nn.Conv2d(in_channels, hidden_dim, kernel_size=1),
+                        nn.Conv2d(in_channels, hidden_dim, kernel_size=k_sizes[_], stride=conv_strides[_]),
                         nn.GroupNorm(32, hidden_dim),
                     ))
             self.input_proj = nn.ModuleList(input_proj_list)
@@ -367,7 +369,7 @@ def build(args):
         aux_weight_dict.update({k + f'_enc': v for k, v in weight_dict.items()})
         weight_dict.update(aux_weight_dict)
 
-    losses = ['boxes']
+    losses = ['labels', 'boxes']
     if args.masks:
         losses += ["masks"]
     # num_classes, matcher, weight_dict, losses, focal_alpha=0.25

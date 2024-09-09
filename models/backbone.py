@@ -20,7 +20,8 @@ from torchvision.models._utils import IntermediateLayerGetter
 from typing import Dict, List
 
 from util.misc import NestedTensor, is_main_process
-
+from sam2.build_sam import build_sam2
+from torchvision.transforms import Normalize, Resize, ToTensor
 
 class FrozenBatchNorm2d(torch.nn.Module):
     """
@@ -73,10 +74,15 @@ class BackboneBase(nn.Module):
             return_layers = {"layer2": "0", "layer3": "1", "layer4": "2"}
             self.strides = [8, 16, 32]
             self.num_channels = [512, 1024, 2048]
+            self.conv_strides_to_apply = [2,1,1]
+            self.k_size_strides_to_apply = [3,1,1]
         else:
             return_layers = {'layer4': "0"}
             self.strides = [32]
             self.num_channels = [2048]
+            self.conv_strides_to_apply = []
+            self.k_size_strides_to_apply = []
+            
         self.body = IntermediateLayerGetter(backbone, return_layers=return_layers)
 
     def forward(self, tensor_list: NestedTensor):
@@ -105,9 +111,47 @@ class Backbone(BackboneBase):
         if dilation:
             self.strides[-1] = self.strides[-1] // 2
 
+class SAM2_Backbone(nn.Module):
+    def __init__(self, checkpoint, model_cfg):
+        super().__init__()
+        self.encoder = build_sam2(model_cfg, checkpoint).image_encoder
+
+        # Freeze encoder
+        for name, parameter in self.encoder.named_parameters():
+            parameter.requires_grad_(False)
+
+        self.num_channels = [256,256,256]
+        self.strides = [4,8,16]
+        self.conv_strides_to_apply = [4,2,1]
+        self.k_size_strides_to_apply = [4,1,1]
+
+    def forward(self, tensor_list: NestedTensor):
+        """
+            'vision_features': features 
+            'vision_pos_enc' (3 items): pos encoding 
+            'backbone_fpn' (3 items): features at different scales . The last item is the same as 'vision_features'
+                (Pdb) xs['backbone_fpn'][0].shape
+                torch.Size([1, 256, 160, 144])
+                (Pdb) xs['backbone_fpn'][1].shape
+                torch.Size([1, 256, 80, 72])
+                (Pdb) xs['backbone_fpn'][2].shape
+                torch.Size([1, 256, 40, 36])
+        """
+        xs = self.encoder(tensor_list.tensors)
+        out = []
+        for x in xs['backbone_fpn']:
+            m = tensor_list.mask
+            assert m is not None
+            mask = F.interpolate(m[None].float(), size=x.shape[-2:]).to(torch.bool)[0]
+            out.append(NestedTensor(x, mask))
+        return out
+    
 
 def build_backbone(args):
     train_backbone = args.lr_backbone > 0
     return_interm_layers = args.masks or (args.num_feature_levels > 1)
-    backbone = Backbone(args.backbone, train_backbone, return_interm_layers, args.dilation)
+    if "resnet" in args.backbone:
+        backbone = Backbone(args.backbone, train_backbone, return_interm_layers, args.dilation)
+    else: # "sam2" == args.backbone:
+        backbone = SAM2_Backbone(args.sam2_checkpoint, args.sam2_model_cfg)
     return backbone
