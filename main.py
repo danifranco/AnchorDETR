@@ -102,10 +102,10 @@ def get_args_parser():
     parser.add_argument('--focal_alpha', default=0.25, type=float)
 
     # dataset parameters
-    parser.add_argument('--dataset_file', default='coco')
+    parser.add_argument('--dataset_file', default='coco', choices=['coco', 'cell'])
     parser.add_argument('--eval_set', default='val', choices=['val', 'test'],
                         type=str,help="dataset to evaluate")
-    parser.add_argument('--coco_path', default='/data/coco', type=str)
+    parser.add_argument('--data_path', default='/data', type=str)
     parser.add_argument('--coco_panoptic_path', type=str)
     parser.add_argument('--remove_difficult', action='store_true')
     parser.add_argument('--output_dir', default='/data/detr-workdir/r50-dc5',
@@ -173,10 +173,10 @@ def main(args):
         sampler_train, args.batch_size, drop_last=True)
 
     data_loader_train = DataLoader(dataset_train, batch_sampler=batch_sampler_train,
-                                   collate_fn=utils.collate_fn, num_workers=args.num_workers,
+                                   collate_fn=utils.collate_fn, 
                                    pin_memory=True)
     data_loader_val = DataLoader(dataset_val, args.batch_size, sampler=sampler_val,
-                                 drop_last=False, collate_fn=utils.collate_fn, num_workers=args.num_workers,
+                                 drop_last=False, collate_fn=utils.collate_fn, 
                                  pin_memory=True)
 
 

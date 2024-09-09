@@ -59,7 +59,8 @@ def crop(image, target, region):
             keep = target['masks'].flatten(1).any(1)
 
         for field in fields:
-            target[field] = target[field][keep]
+            if field in target:
+                target[field] = target[field][keep]
 
     return cropped_image, target
 
