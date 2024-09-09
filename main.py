@@ -173,10 +173,10 @@ def main(args):
         sampler_train, args.batch_size, drop_last=True)
 
     data_loader_train = DataLoader(dataset_train, batch_sampler=batch_sampler_train,
-                                   collate_fn=utils.collate_fn, 
+                                   collate_fn=utils.collate_fn, num_workers=args.num_workers,
                                    pin_memory=True)
     data_loader_val = DataLoader(dataset_val, args.batch_size, sampler=sampler_val,
-                                 drop_last=False, collate_fn=utils.collate_fn, 
+                                 drop_last=False, collate_fn=utils.collate_fn, num_workers=args.num_workers,
                                  pin_memory=True)
 
 
@@ -213,10 +213,11 @@ def main(args):
     else:
         optimizer = torch.optim.AdamW(param_dicts, lr=args.lr,
                                       weight_decay=args.weight_decay)
-    lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, args.lr_drop)
-
+    if args.scheduler_type == "step_lr":
+        lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, args.lr_drop)
+        
     if args.distributed:
-        model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu])
+        model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu], find_unused_parameters=True)
         model_without_ddp = model.module
 
     if args.dataset_file == "coco_panoptic":
