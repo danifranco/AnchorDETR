@@ -82,7 +82,7 @@ def hflip(image, target):
     return flipped_image, target
 
 
-def resize(image, target, size, max_size=None, both_dims=False):
+def resize(image, target, size, max_size=None):
     # size can be min_size (scalar) or (w, h) tuple
 
     def get_size_with_aspect_ratio(image_size, size, max_size=None):
@@ -105,16 +105,13 @@ def resize(image, target, size, max_size=None, both_dims=False):
 
         return (oh, ow)
 
-    def get_size(image_size, size, max_size=None, both_dims=False):
+    def get_size(image_size, size, max_size=None):
         if isinstance(size, (list, tuple)):
             return size[::-1]
         else:
-            if not both_dims:
-                return get_size_with_aspect_ratio(image_size, size, max_size)
-            else:
-                return (size,size)
+            return get_size_with_aspect_ratio(image_size, size, max_size)
 
-    size = get_size(image.size, size, max_size, both_dims)
+    size = get_size(image.size, size, max_size)
     rescaled_image = F.resize(image, size)
 
     if target is None:

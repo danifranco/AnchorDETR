@@ -240,16 +240,13 @@ def main(args):
         model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu], 
             find_unused_parameters=find_unused_parameters)
         model_without_ddp = model.module
-    
-    if args.dataset_file == "cell":
-        base_ds = None
+
+    if args.dataset_file == "coco_panoptic":
+        # We also evaluate AP during panoptic training, on original coco DS
+        coco_val = datasets.coco.build("val", args)
+        base_ds = get_coco_api_from_dataset(coco_val)
     else:
-        if args.dataset_file == "coco_panoptic":
-            # We also evaluate AP during panoptic training, on original coco DS
-            coco_val = datasets.coco.build("val", args)
-            base_ds = get_coco_api_from_dataset(coco_val)
-        else:
-            base_ds = get_coco_api_from_dataset(dataset_val)
+        base_ds = get_coco_api_from_dataset(dataset_val)
 
     if args.frozen_weights is not None:
         checkpoint = torch.load(args.frozen_weights, map_location='cpu')
