@@ -164,6 +164,7 @@ def main(args):
 
     model_without_ddp = model
     n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    print(model)
     print('number of params:', n_parameters)
 
     dataset_train = build_dataset(image_set='train', args=args)
@@ -199,9 +200,6 @@ def main(args):
                 break
         return out
 
-    for n, p in model_without_ddp.named_parameters():
-        print(n)
-
     param_dicts = [
         {
             "params":
@@ -236,7 +234,7 @@ def main(args):
     print(f"LR scheduler: {lr_scheduler}")
 
     if args.distributed:
-        find_unused_parameters = False if args.dataset_file != "cell" else True
+        find_unused_parameters = False # if args.dataset_file != "cell" else True
         model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu], 
             find_unused_parameters=find_unused_parameters)
         model_without_ddp = model.module
