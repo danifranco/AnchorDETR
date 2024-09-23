@@ -13,14 +13,19 @@ COCO dataset which returns image_id for evaluation.
 Mostly copy-paste from https://github.com/pytorch/vision/blob/13b35ff/references/detection/coco_utils.py
 """
 from pathlib import Path
-
+import os
+import random
+import matplotlib.pyplot as plt
+import numpy as np
 import torch
 import torch.utils.data
 from pycocotools import mask as coco_mask
+from PIL import Image
+import datasets.transforms as T
 
 from .torchvision_datasets import CocoDetection as TvCocoDetection
 from util.misc import get_local_rank, get_local_size
-import datasets.transforms as T
+from util.box_ops import box_cxcywh_to_xyxy
 
 
 class CocoDetection(TvCocoDetection):
@@ -29,6 +34,7 @@ class CocoDetection(TvCocoDetection):
                                             cache_mode=cache_mode, local_rank=local_rank, local_size=local_size)
         self._transforms = transforms
         self.prepare = ConvertCocoPolysToMask(return_masks)
+        self.unnorm = T.UnNormalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
 
     def __getitem__(self, idx):
         img, target = super(CocoDetection, self).__getitem__(idx)
@@ -38,8 +44,56 @@ class CocoDetection(TvCocoDetection):
         if self._transforms is not None:
             img, target = self._transforms(img, target)
         return img, target
+    
+    def get_transformed_samples(self, num_examples, out_dir, random_images=False):
+        # Generate the examples
+        print("Creating samples of data augmentation . . .")
+        for i in range(num_examples):
+            if random_images:
+                pos = random.randint(0, len(self.ids) - 1) if len(self.ids) > 2 else 0
+            else:
+                pos = i
+            img, target = super(CocoDetection, self).__getitem__(pos)
+            image_id = self.ids[pos]
+            target = {'image_id': image_id, 'annotations': target}
+            img, target = self.prepare(img, target)
 
+            self.save_image(img, target, out_dir, f'image_{pos}.png')
 
+            # Apply transformations
+            if self._transforms is not None:
+                img, target = self._transforms(img, target)
+
+            # Undo normalization
+            self.unnorm(img)
+            self.save_image(img, target, out_dir, f'image_{pos}_transformed.png')
+
+    def save_image(self, image, target, data_out_dir, filename):
+        if isinstance(image, Image.Image):
+            image = np.array(image)
+            boxes = target['boxes']
+        # DA has been applied 
+        elif isinstance(image, torch.Tensor):
+            image = np.array(image).transpose(1,2,0)
+            boxes = target['boxes']
+            boxes = box_cxcywh_to_xyxy(boxes)
+            boxes *= np.array([image.shape[1],image.shape[0],image.shape[1],image.shape[0]]) 
+
+        plt.figure(figsize=(10, 10))
+        plt.imshow(image)
+        ax=plt.gca()
+        for box in boxes:
+            ax.add_patch(plt.Rectangle(
+                (int(box[0]), int(box[1])), 
+                int(box[2]-box[0]), int(box[3]-box[1]), 
+                edgecolor='red', 
+                facecolor=(0, 0, 0, 0), 
+                lw=2)
+            ) 
+        plt.axis('off')
+        os.makedirs(data_out_dir, exist_ok=True)
+        plt.savefig(os.path.join(data_out_dir, filename))
+    
 def convert_coco_poly_to_mask(segmentations, height, width):
     masks = []
     for polygons in segmentations:
@@ -188,4 +242,13 @@ def build(image_set, args):
 
     dataset = CocoDetection(img_folder, ann_file, transforms=make_coco_transforms(image_set, sam2=("sam2" == args.backbone)), 
         return_masks=args.masks, cache_mode=args.cache_mode, local_rank=get_local_rank(), local_size=get_local_size())
+    
+    # Generate examples of data augmentation
+    print("Creating generator samples . . .")
+    dataset.get_transformed_samples(
+        10,
+        out_dir=os.path.join(args.output_dir, "aug"),
+        random_images=True,
+    )
+
     return dataset
