@@ -10,9 +10,9 @@ import numpy as np
 from tqdm import tqdm
 from skimage.measure import regionprops
 
-# python adapt_dataset_to_bboxes.py --input_dir "/scratch/dfranco/thesis/data2/dfranco/datasets/cellSAM_dataset/dataset/train" \
-#     --out_dir "/scratch/dfranco/thesis/data2/dfranco/datasets/cellSAM_dataset/prepared_dataset/train" \
-#     --biapy_dir ../../../BiaPy/
+# python adapt_dataset_to_coco_format.py --input_dir "/scratch/dfranco/thesis/data2/dfranco/datasets/cellSAM_dataset/dataset/train" \
+#     --out_dir "/scratch/dfranco/thesis/data2/dfranco/datasets/cellSAM_dataset/prepared_dataset" \
+#     --biapy_dir ../../../BiaPy/ --data_type train
 
 parser = argparse.ArgumentParser(description="Adapts dataset into COCO format",
                                  formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -37,6 +37,7 @@ from biapy.data.data_manipulation import read_img_as_ndarray
 from biapy.utils.util import save_tif
 
 x_out_folder = os.path.join(args["out_dir"], args['data_type'])
+y_aux_out_folder = os.path.join(args["out_dir"], args['data_type']+"_y_in_tif")
 y_out_folder = os.path.join(args["out_dir"], "annotations")
 
 images = []
@@ -66,13 +67,14 @@ for i, folder in tqdm(enumerate(folders)):
         # Y data
         sample_path = os.path.join(subdataset_dir, y_ids[j])
         mask = read_img_as_ndarray(sample_path, is_3d=False).squeeze()
+        save_tif(np.expand_dims(np.expand_dims(mask,0),-1), y_aux_out_folder, [new_sample_name], verbose=False)
 
         # Extract all bboxes from instances
         regions = regionprops(mask)
         image_bboxes  = []
         for k, props in enumerate(regions):
             miny, minx, maxy, maxx = props.bbox
-            image_bboxes.append([miny, minx, abs(maxy-miny), abs(maxx-minx)])
+            image_bboxes.append([minx, miny, abs(maxx-minx), abs(maxy-miny)])
 
         heights.append(img.shape[0])
         widths.append(img.shape[1])
