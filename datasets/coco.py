@@ -89,11 +89,13 @@ class CocoDetection(TvCocoDetection):
                 edgecolor='red', 
                 facecolor=(0, 0, 0, 0), 
                 lw=2)
-            ) 
+            )             
         plt.axis('off')
         os.makedirs(data_out_dir, exist_ok=True)
         plt.savefig(os.path.join(data_out_dir, filename))
-    
+        plt.clf()
+        plt.close()
+
 def convert_coco_poly_to_mask(segmentations, height, width):
     masks = []
     for polygons in segmentations:
