@@ -29,7 +29,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
     criterion.train()
     metric_logger = utils.MetricLogger(delimiter="  ")
     metric_logger.add_meter('lr', utils.SmoothedValue(window_size=1, fmt='{value:.6f}'))
-    # metric_logger.add_meter('class_error', utils.SmoothedValue(window_size=1, fmt='{value:.2f}'))
+    metric_logger.add_meter('class_error', utils.SmoothedValue(window_size=1, fmt='{value:.2f}'))
     metric_logger.add_meter('grad_norm', utils.SmoothedValue(window_size=1, fmt='{value:.2f}'))
     header = 'Epoch: [{}]'.format(epoch)
     print_freq = 100
@@ -67,9 +67,9 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
             grad_total_norm = utils.get_total_grad_norm(model.parameters(), max_norm)
         optimizer.step()
 
-        # metric_logger.update(loss=loss_value, **loss_dict_reduced_scaled, **loss_dict_reduced_unscaled)
+        metric_logger.update(loss=loss_value, **loss_dict_reduced_scaled, **loss_dict_reduced_unscaled)
         metric_logger.update(loss=loss_value)
-        # metric_logger.update(class_error=loss_dict_reduced['class_error'])
+        metric_logger.update(class_error=loss_dict_reduced['class_error'])
         metric_logger.update(lr=optimizer.param_groups[0]["lr"])
         metric_logger.update(grad_norm=grad_total_norm)
 
@@ -86,13 +86,14 @@ def evaluate(model, criterion, postprocessors, data_loader, base_ds, device, out
     criterion.eval()
 
     metric_logger = utils.MetricLogger(delimiter="  ")
-    # metric_logger.add_meter('class_error', utils.SmoothedValue(window_size=1, fmt='{value:.2f}'))
-    header = 'Test:'
+    metric_logger.add_meter('class_error', utils.SmoothedValue(window_size=1, fmt='{value:.2f}'))
+    header = 'Test:' 
 
     iou_types = tuple(k for k in ('segm', 'bbox') if k in postprocessors.keys())
     coco_evaluator = None
-    # coco_evaluator = CocoEvaluator(base_ds, iou_types, save_json=save_json)
-    # coco_evaluator.coco_eval[iou_types[0]].params.iouThrs = [0, 0.1, 0.5, 0.75]
+    if base_ds is not None:
+        coco_evaluator = CocoEvaluator(base_ds, iou_types, save_json=save_json)
+        # coco_evaluator.coco_eval[iou_types[0]].params.iouThrs = [0, 0.1, 0.5, 0.75]
 
     panoptic_evaluator = None
     if 'panoptic' in postprocessors.keys():
@@ -120,7 +121,7 @@ def evaluate(model, criterion, postprocessors, data_loader, base_ds, device, out
         #                      **loss_dict_reduced_scaled,
         #                      **loss_dict_reduced_unscaled)
         metric_logger.update(loss=sum(loss_dict_reduced_scaled.values()))
-        # metric_logger.update(class_error=loss_dict_reduced['class_error'])
+        metric_logger.update(class_error=loss_dict_reduced['class_error'])
 
         orig_target_sizes = torch.stack([t["orig_size"] for t in targets], dim=0)
         results = postprocessors['bbox'](outputs, orig_target_sizes)
