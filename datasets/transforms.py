@@ -16,6 +16,8 @@ import PIL
 import torch
 import torchvision.transforms as T
 import torchvision.transforms.functional as F
+import numpy as np 
+from PIL import Image
 
 from util.box_ops import box_xyxy_to_cxcywh
 from util.misc import interpolate
@@ -81,6 +83,21 @@ def hflip(image, target):
 
     return flipped_image, target
 
+
+def vflip(image, target):
+    flipped_image = F.vflip(image)
+
+    w, h = image.size
+    target = target.copy()
+    if "boxes" in target:
+        boxes = target["boxes"]
+        boxes = boxes[:, [0, 3, 2, 1]] * torch.as_tensor([1, -1, 1, -1]) + torch.as_tensor([0, h, 0, h])
+        target["boxes"] = boxes
+
+    if "masks" in target:
+        target['masks'] = target['masks'].flip(-1)
+
+    return flipped_image, target
 
 def resize(image, target, size, max_size=None):
     # size can be min_size (scalar) or (w, h) tuple
@@ -183,6 +200,19 @@ def pad(image, target, padding):
         target['masks'] = torch.nn.functional.pad(target['masks'], (0, padding[0], 0, padding[1]))
     return padded_image, target
 
+def brightness(image, b_factor):
+    _image = np.array(image).astype(np.int16)
+    for c in range(_image.shape[-1]):
+        bright = int(b_factor*np.max(_image[...,c]))
+        _image[...,c] += bright
+    _image = np.clip(_image, 0, 255).astype(np.uint8)
+    return Image.fromarray(_image)
+
+def contrast(image, c_factor):
+    _image = np.array(image).astype(np.float32)
+    _image *= 1 + c_factor
+    _image = np.clip(_image, 0, 255).astype(np.uint8)
+    return Image.fromarray(_image)
 
 class RandomCrop(object):
     def __init__(self, size):
@@ -226,6 +256,15 @@ class RandomHorizontalFlip(object):
             return hflip(img, target)
         return img, target
 
+class RandomVerticalFlip(object):
+    def __init__(self, p=0.5):
+        self.p = p
+
+    def __call__(self, img, target):
+        if random.random() < self.p:
+            return vflip(img, target)
+        return img, target
+    
 
 class RandomResize(object):
     def __init__(self, sizes, max_size=None):
@@ -321,7 +360,23 @@ class UnNormalize(object):
             t.mul_(s).add_(m)
             # The normalize code -> t.sub_(m).div_(s)
         return tensor
-    
+
+class RandomBrightness(object):
+    def __init__(self, brightness_factor):
+        self.brightness_factor = brightness_factor
+
+    def __call__(self, img, target):
+        b_factor = np.random.uniform(self.brightness_factor[0], self.brightness_factor[1])
+        return brightness(img, b_factor), target
+
+class RandomContrast(object):
+    def __init__(self, contrast_factor):
+        self.contrast_factor = contrast_factor
+
+    def __call__(self, img, target):
+        c_factor = np.random.uniform(self.contrast_factor[0], self.contrast_factor[1])
+        return contrast(img, c_factor), target
+       
 class Compose(object):
     def __init__(self, transforms):
         self.transforms = transforms
