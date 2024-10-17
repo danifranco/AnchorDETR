@@ -23,6 +23,8 @@ import util.misc as utils
 import datasets.samplers as samplers
 from datasets import build_dataset, get_coco_api_from_dataset
 from engine import evaluate, train_one_epoch
+from engine_distillation import evaluate_distillation, train_one_epoch_distillation
+
 from models import build_model
 from util.warmup_cosine_decay import WarmUpCosineDecayScheduler
 
@@ -54,6 +56,8 @@ def get_args_parser():
     # SAM2 
     parser.add_argument('--sam2_checkpoint', default='sam2_hiera_tiny.pt', type=str)
     parser.add_argument('--sam2_model_cfg', default='sam2_hiera_t.yaml', type=str)
+    parser.add_argument('--sam2_teacher_checkpoint', default='sam2_hiera_tiny.pt', type=str)
+    parser.add_argument('--sam2_teacher_model_cfg', default='sam2_hiera_t.yaml', type=str)
 
     # * Backbone
     parser.add_argument('--backbone', default='resnet50', type=str,
@@ -128,6 +132,7 @@ def get_args_parser():
     parser.add_argument('--eval', action='store_true')
     parser.add_argument('--num_workers', default=2, type=int)
     parser.add_argument('--cache_mode', default=False, action='store_true', help='whether to cache images on memory')
+    parser.add_argument('--distillation', default=False, action='store_true', help='To distill from teacher model')
 
     return parser
 
@@ -159,13 +164,24 @@ def main(args):
     np.random.seed(seed)
     random.seed(seed)
 
-    model, criterion, postprocessors = build_model(args)
-    model.to(device)
-
-    model_without_ddp = model
-    n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    print(model)
-    print('number of params:', n_parameters)
+    if not args.distillation:
+        model, criterion, postprocessors = build_model(args)
+        model.to(device)
+        model_without_ddp = model
+        n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
+        print(model)
+        print('number of params:', n_parameters)
+    else:
+        teacher_model, model, criterion, postprocessors = build_model(args)
+        model.to(device)
+        model_without_ddp = model
+        n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
+        print(model)
+        print('number of params:', n_parameters)
+        
+        n_parameters = sum(p.numel() for p in teacher_model.parameters() if p.requires_grad)
+        print("Teacher model's number of params:", n_parameters)
+        teacher_model.to(device)
 
     dataset_train = build_dataset(image_set='train', args=args)
     dataset_val = build_dataset(image_set=args.eval_set, args=args)
@@ -245,7 +261,7 @@ def main(args):
         base_ds = get_coco_api_from_dataset(coco_val)
     else:
         base_ds = get_coco_api_from_dataset(dataset_val)
-
+        
     if args.frozen_weights is not None:
         checkpoint = torch.load(args.frozen_weights, map_location='cpu')
         model_without_ddp.detr.load_state_dict(checkpoint['model'])
@@ -289,9 +305,14 @@ def main(args):
             args.start_epoch = checkpoint['epoch'] + 1
         # check the resumed model
         if not args.eval:
-            test_stats, coco_evaluator = evaluate(
-                model, criterion, postprocessors, data_loader_val, base_ds, device, args.output_dir
-            )
+            if args.distillation:
+                test_stats, coco_evaluator = evaluate_distillation(
+                    teacher_model, model, criterion, postprocessors, data_loader_val, device, args.output_dir
+                )
+            else:
+                test_stats, coco_evaluator = evaluate(
+                    model, criterion, postprocessors, data_loader_val, base_ds, device, args.output_dir
+                )
     
     if args.eval:
         test_stats, coco_evaluator = evaluate(model, criterion, postprocessors,
@@ -309,8 +330,12 @@ def main(args):
     for epoch in range(args.start_epoch, args.epochs):
         if args.distributed:
             sampler_train.set_epoch(epoch)
-        train_stats = train_one_epoch(
-            model, criterion, data_loader_train, optimizer, device, epoch, args.clip_max_norm)
+        if args.distillation:
+            train_stats = train_one_epoch_distillation(
+                teacher_model, model, criterion, data_loader_train, optimizer, device, epoch, args.clip_max_norm)
+        else:
+            train_stats = train_one_epoch(
+                model, criterion, data_loader_train, optimizer, device, epoch, args.clip_max_norm)
         lr_scheduler.step()
         if args.output_dir:
             checkpoint_paths = [output_dir / 'checkpoint.pth']
@@ -325,9 +350,15 @@ def main(args):
                     'args': args,
                 }, checkpoint_path)
 
-        test_stats, coco_evaluator = evaluate(
-            model, criterion, postprocessors, data_loader_val, base_ds, device, args.output_dir
-        )
+        if args.distillation:
+            coco_evaluator = None
+            test_stats = evaluate_distillation(
+                teacher_model, model, criterion, postprocessors, data_loader_val, device, args.output_dir
+            )
+        else:
+            test_stats, coco_evaluator = evaluate(
+                model, criterion, postprocessors, data_loader_val, base_ds, device, args.output_dir
+            )
 
         log_stats = {**{f'train_{k}': v for k, v in train_stats.items()},
                      **{f'test_{k}': v for k, v in test_stats.items()},

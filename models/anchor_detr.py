@@ -302,6 +302,32 @@ class SetCriterion(nn.Module):
 
         return losses
 
+class MSECriterion(nn.Module):
+    """ 
+    This class computes the loss for the distillation between cellSAM.cellFinder (anchorDETR) and sam2 anchorDETR.
+    """
+    def __init__(self):
+        """ Create MSE criterion.
+        """
+        super().__init__()
+        self.loss_function = nn.MSELoss()
+    
+    def forward(self, outputs, targets):
+        """
+        This performs the loss computation.
+        """
+        loss = 0
+        if 'pred_logits' in outputs and 'pred_logits' in outputs:
+            loss += self.loss_function(outputs['pred_logits'], targets['pred_logits'])
+        if 'pred_boxes' in outputs and 'pred_boxes' in outputs:
+            loss += self.loss_function(outputs['pred_boxes'], targets['pred_boxes'])
+        if 'aux_outputs' in outputs and 'aux_outputs' in outputs:
+            for i in range(len(outputs['aux_outputs'][0])):
+                loss += self.loss_function(outputs['aux_outputs'][i]['pred_logits'], targets['aux_outputs'][i]['pred_logits'])
+                loss += self.loss_function(outputs['aux_outputs'][i]['pred_boxes'], targets['aux_outputs'][i]['pred_boxes'])
+        
+        return loss
+
 
 class PostProcess(nn.Module):
     """ This module converts the model's output into the format expected by the coco api"""
@@ -355,6 +381,12 @@ def build(args):
     )
     if args.masks:
         model = DETRsegm(model, freeze_detr=(args.frozen_weights is not None))
+
+    if args.distillation:
+        from .cellSAM import get_model
+        model_teacher = get_model(None).eval()
+        model_teacher.bbox_threshold = 0.4 
+
     matcher = build_matcher(args)
     weight_dict = {'loss_ce': args.cls_loss_coef, 'loss_bbox': args.bbox_loss_coef}
     weight_dict['loss_giou'] = args.giou_loss_coef
@@ -373,8 +405,12 @@ def build(args):
     if args.masks:
         losses += ["masks"]
     # num_classes, matcher, weight_dict, losses, focal_alpha=0.25
-    criterion = SetCriterion(num_classes, matcher, weight_dict, losses, focal_alpha=args.focal_alpha)
+    if not args.distillation:
+        criterion = SetCriterion(num_classes, matcher, weight_dict, losses, focal_alpha=args.focal_alpha)
+    else:
+        criterion = MSECriterion()
     criterion.to(device)
+    
     postprocessors = {'bbox': PostProcess()}
     if args.masks:
         postprocessors['segm'] = PostProcessSegm()
@@ -382,4 +418,7 @@ def build(args):
             is_thing_map = {i: i <= 90 for i in range(201)}
             postprocessors["panoptic"] = PostProcessPanoptic(is_thing_map, threshold=0.85)
 
-    return model, criterion, postprocessors
+    if not args.distillation:
+        return model, criterion, postprocessors
+    else:
+        return model_teacher, model, criterion, postprocessors

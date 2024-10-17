@@ -6,3 +6,5 @@ cython
 scipy
 scikit-image
 pandas
+requests
+segment_anything

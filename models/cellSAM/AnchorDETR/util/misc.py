@@ -20,14 +20,11 @@ import datetime
 import pickle
 from typing import Optional, List
 from packaging import version
-import matplotlib.pyplot as plt
-import numpy as np
-from PIL import Image
 
 import torch
+import torch.nn as nn
 import torch.distributed as dist
 from torch import Tensor
-from util.box_ops import box_cxcywh_to_xyxy
 
 # needed due to empty tensor bug in pytorch and torchvision 0.5
 import torchvision
@@ -520,40 +517,3 @@ def inverse_sigmoid(x, eps=1e-5):
     x2 = (1 - x).clamp(min=eps)
     return torch.log(x1/x2)
 
-
-def save_image(image, boxes, data_out_dir, filename):
-    if isinstance(image, Image.Image):
-        image = np.array(image)
-    # DA has been applied 
-    elif isinstance(image, torch.Tensor):
-        image = np.array(image.cpu()).transpose(1,2,0)
-        # boxes = box_cxcywh_to_xyxy(boxes)
-        # boxes *= np.array([image.shape[1],image.shape[0],image.shape[1],image.shape[0]]) 
-
-    plt.figure(figsize=(10, 10))
-    plt.imshow(image)
-    ax=plt.gca()
-    for box in boxes:
-        ax.add_patch(plt.Rectangle(
-            (int(box[0]), int(box[1])), 
-            int(box[2]-box[0]), int(box[3]-box[1]), 
-            edgecolor='red', 
-            facecolor=(0, 0, 0, 0), 
-            lw=2)
-        )             
-    plt.axis('off')
-    os.makedirs(data_out_dir, exist_ok=True)
-    plt.savefig(os.path.join(data_out_dir, filename))
-    plt.clf()
-    plt.close()
-
-
-def all_reduce_mean(x):
-    world_size = get_world_size()
-    if world_size > 1:
-        x_reduce = torch.tensor(x).cuda()
-        dist.all_reduce(x_reduce)
-        x_reduce /= world_size
-        return x_reduce.item()
-    else:
-        return x

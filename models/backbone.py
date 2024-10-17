@@ -21,7 +21,6 @@ from typing import Dict, List
 
 from util.misc import NestedTensor, is_main_process
 from sam2.build_sam import build_sam2
-from torchvision.transforms import Normalize, Resize, ToTensor
 
 class FrozenBatchNorm2d(torch.nn.Module):
     """
@@ -111,19 +110,77 @@ class Backbone(BackboneBase):
         if dilation:
             self.strides[-1] = self.strides[-1] // 2
 
+class ModifiedImageEncoderViT(nn.Module):
+    def __init__(self, original_model, return_interm_layers):
+        super(ModifiedImageEncoderViT, self).__init__()
+
+        # Extract all layers up to but not including 'neck'
+        self.patch_embed = original_model.trunk.patch_embed
+        self.blocks = original_model.trunk.blocks
+        self.pos_embed = original_model.trunk.pos_embed
+        self.pos_embed_window = original_model.trunk.pos_embed_window
+        self.return_interm_layers = return_interm_layers
+
+        stages = (2, 3, 16, 3) # extracted from https://github.com/facebookresearch/sam2/blob/main/sam2/configs/sam2.1/sam2.1_hiera_t.yaml
+        depth = sum(stages)
+        self.stage_ends = [sum(stages[:i]) - 1 for i in range(1, len(stages) + 1)]
+
+    def _get_pos_embed(self, hw) -> torch.Tensor:
+        """ 
+        Extracted from Hiera
+        https://github.com/facebookresearch/segment-anything-2/blob/main/sam2/modeling/backbones/hieradet.py#L265
+        """
+        h, w = hw
+        window_embed = self.pos_embed_window
+        pos_embed = F.interpolate(self.pos_embed, size=(h, w), mode="bicubic")
+        pos_embed = pos_embed + window_embed.tile(
+            [x // y for x, y in zip(pos_embed.shape, window_embed.shape)]
+        )
+        pos_embed = pos_embed.permute(0, 2, 3, 1)
+        return pos_embed
+
+    def forward(self, x):
+        # Apply patch embedding
+        x = self.patch_embed(x)
+
+        if self.pos_embed is not None:
+            # Add pos embed
+            x = x + self._get_pos_embed(x.shape[1:3])
+
+        # # Pass through blocks
+        # for block in self.blocks:
+        #     x = block(x)
+        # return x.permute(0, 3, 1, 2)
+
+        # For returning intermediate feature layers 
+        outputs = []
+        for i, blk in enumerate(self.blocks):
+            x = blk(x)
+            if (i == self.stage_ends[-1]) or (
+                i in self.stage_ends and self.return_interm_layers
+            ):
+                feats = x.permute(0, 3, 1, 2)
+                outputs.append(feats)
+                
+        return outputs
+
 class SAM2_Backbone(nn.Module):
-    def __init__(self, checkpoint, model_cfg):
+    def __init__(self, checkpoint, model_cfg, return_interm_layers=False):
         super().__init__()
         self.encoder = build_sam2(model_cfg, checkpoint).image_encoder
+        # self.encoder = ModifiedImageEncoderViT(self.encoder, return_interm_layers)
 
         # Freeze encoder
         for name, parameter in self.encoder.named_parameters():
             parameter.requires_grad_(False)
-
-        self.num_channels = [256,256,256]
-        self.strides = [4,8,16]
-        self.conv_strides_to_apply = [4,2,1]
-        self.k_size_strides_to_apply = [4,1,1]
+        if return_interm_layers:
+            self.num_channels = [256,256,256]
+            self.strides = [4,8,16]
+            self.conv_strides_to_apply = [4,2,1]
+            self.k_size_strides_to_apply = [4,1,1]
+        else:
+            self.num_channels = [768]
+            self.strides = [16]
 
     def forward(self, tensor_list: NestedTensor):
         """
@@ -137,6 +194,14 @@ class SAM2_Backbone(nn.Module):
                 (Pdb) xs['backbone_fpn'][2].shape
                 torch.Size([1, 256, 40, 36])
         """
+        # x = self.encoder(tensor_list.tensors)
+        # # print(x['vision_features'].shape) # torch.Size([1, 256, 64, 64])
+        # m = tensor_list.mask  
+        # assert m is not None
+        # mask = F.interpolate(m[None].float(), size=x.shape[-2:]).to(torch.bool)[0]
+        # out = NestedTensor(x, mask)
+        # return [out]
+    
         xs = self.encoder(tensor_list.tensors)
         out = []
         for x in xs['backbone_fpn']:
@@ -153,5 +218,5 @@ def build_backbone(args):
     if "resnet" in args.backbone:
         backbone = Backbone(args.backbone, train_backbone, return_interm_layers, args.dilation)
     else: # "sam2" == args.backbone:
-        backbone = SAM2_Backbone(args.sam2_checkpoint, args.sam2_model_cfg)
+        backbone = SAM2_Backbone(args.sam2_checkpoint, args.sam2_model_cfg, return_interm_layers)
     return backbone
