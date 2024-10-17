@@ -89,6 +89,8 @@ def get_args_parser():
                         default="RCDA",
                         choices=['RCDA', 'nn.MultiheadAttention'],
                         type=str,help="Type of attention module")
+    parser.add_argument('--num_classes', default=91, type=int, help="Number of classes")
+    
     # * Segmentation
     parser.add_argument('--masks', action='store_true',
                         help="Train segmentation head if the flag is provided")
