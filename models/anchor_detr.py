@@ -365,9 +365,9 @@ class PostProcess(nn.Module):
 
 
 def build(args):
-    num_classes = 20 if args.dataset_file != 'coco' else 91
-    if args.dataset_file == "coco_panoptic":
-        num_classes = 250
+    # num_classes = 20 if args.dataset_file != 'coco' else 91
+    # if args.dataset_file == "coco_panoptic":
+    #     num_classes = 250
     device = torch.device(args.device)
 
     backbone = build_backbone(args)
@@ -406,7 +406,7 @@ def build(args):
         losses += ["masks"]
     # num_classes, matcher, weight_dict, losses, focal_alpha=0.25
     if not args.distillation:
-        criterion = SetCriterion(num_classes, matcher, weight_dict, losses, focal_alpha=args.focal_alpha)
+        criterion = SetCriterion(args.num_classes, matcher, weight_dict, losses, focal_alpha=args.focal_alpha)
     else:
         criterion = MSECriterion()
     criterion.to(device)
