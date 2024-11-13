@@ -181,6 +181,9 @@ def main(args):
         print(model)
         print('number of params:', n_parameters)
         
+        # print("Name of parameters to be trained:")
+        # print([name for name, p in model.named_parameters() if p.requires_grad])
+
         n_parameters = sum(p.numel() for p in teacher_model.parameters() if p.requires_grad)
         print("Teacher model's number of params:", n_parameters)
         teacher_model.to(device)
@@ -288,23 +291,23 @@ def main(args):
             print('Missing Keys: {}'.format(missing_keys))
         if len(unexpected_keys) > 0:
             print('Unexpected Keys: {}'.format(unexpected_keys))
-        if not args.eval and 'optimizer' in checkpoint and 'lr_scheduler' in checkpoint and 'epoch' in checkpoint:
-            import copy
-            p_groups = copy.deepcopy(optimizer.param_groups)
-            optimizer.load_state_dict(checkpoint['optimizer'])
-            for pg, pg_old in zip(optimizer.param_groups, p_groups):
-                pg['lr'] = pg_old['lr']
-                pg['initial_lr'] = pg_old['initial_lr']
+        # if not args.eval and 'optimizer' in checkpoint and 'lr_scheduler' in checkpoint and 'epoch' in checkpoint:
+        #     import copy
+        #     p_groups = copy.deepcopy(optimizer.param_groups)
+        #     optimizer.load_state_dict(checkpoint['optimizer'])
+        #     for pg, pg_old in zip(optimizer.param_groups, p_groups):
+        #         pg['lr'] = pg_old['lr']
+        #         pg['initial_lr'] = pg_old['initial_lr']
 
-            lr_scheduler.load_state_dict(checkpoint['lr_scheduler'])
-            # todo: this is a hack for doing experiment that resume from checkpoint and also modify lr scheduler (e.g., decrease lr in advance).
-            args.override_resumed_lr_drop = True
-            if args.override_resumed_lr_drop:
-                print('Warning: (hack) args.override_resumed_lr_drop is set to True, so args.lr_drop would override lr_drop in resumed lr_scheduler.')
-                lr_scheduler.step_size = args.lr_drop
-                lr_scheduler.base_lrs = list(map(lambda group: group['initial_lr'], optimizer.param_groups))
-            lr_scheduler.step(lr_scheduler.last_epoch)
-            args.start_epoch = checkpoint['epoch'] + 1
+        #     lr_scheduler.load_state_dict(checkpoint['lr_scheduler'])
+        #     # todo: this is a hack for doing experiment that resume from checkpoint and also modify lr scheduler (e.g., decrease lr in advance).
+        #     args.override_resumed_lr_drop = True
+        #     if args.override_resumed_lr_drop:
+        #         print('Warning: (hack) args.override_resumed_lr_drop is set to True, so args.lr_drop would override lr_drop in resumed lr_scheduler.')
+        #         lr_scheduler.step_size = args.lr_drop
+        #         lr_scheduler.base_lrs = list(map(lambda group: group['initial_lr'], optimizer.param_groups))
+        #     lr_scheduler.step(lr_scheduler.last_epoch)
+        #     args.start_epoch = checkpoint['epoch'] + 1
         # check the resumed model
         if not args.eval:
             if args.distillation:

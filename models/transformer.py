@@ -503,7 +503,7 @@ def build_transformer(args):
         dim_feedforward=args.dim_feedforward,
         dropout=args.dropout,
         activation="relu",
-        num_feature_levels=args.num_feature_levels,
+        num_feature_levels=1, #args.num_feature_levels,
         num_query_position=args.num_query_position,
         num_query_pattern=args.num_query_pattern,
         spatial_prior=args.spatial_prior,

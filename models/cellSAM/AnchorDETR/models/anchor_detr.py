@@ -114,9 +114,12 @@ class AnchorDETR(nn.Module):
             src, mask = feat.decompose()
             srcs.append(self.input_proj[l](src).unsqueeze(1))
             masks.append(mask)
+            # print(f"cellfinder-anchor-dani: {mask.shape}")
             assert mask is not None
 
         srcs = torch.cat(srcs, dim=1)
+        # print(f"cellfinder-anchor-dani: {srcs.shape}")
+        # import pdb; pdb.set_trace()
 
         outputs_class, outputs_coord = self.transformer(srcs, masks)
 

@@ -65,6 +65,8 @@ class CocoDetection(VisionDataset):
         if path.endswith("tif"):
             img = read_img_as_ndarray(os.path.join(self.root, path))
             img = normalize_to_range(img, img.min(), img.max(), out_min=0, out_max=255, out_type=np.uint8)
+            # if img[...,-1].max() == 0:
+            #     img = np.stack((img[...,-1],)*3, axis=-1)
             img = Image.fromarray(img.astype('uint8'), 'RGB')
             return img 
         else:
@@ -78,6 +80,9 @@ class CocoDetection(VisionDataset):
             tuple: Tuple (image, target). target is the object returned by ``coco.loadAnns``.
         """
         coco = self.coco
+        # import pdb; pdb.set_trace()
+        # index = 1663 # 'monusac_TCGA-B6-A0WZ-01Z-00-DX1_1.b0.X.tif'
+        # index = 459 # 'monusac_TCGA-B6-A0WZ-01Z-00-DX1_1.b0.X.tif'
         img_id = self.ids[index]
         ann_ids = coco.getAnnIds(imgIds=img_id)
         target = coco.loadAnns(ann_ids)

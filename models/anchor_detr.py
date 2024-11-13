@@ -40,6 +40,10 @@ class AnchorDETR(nn.Module):
         """
         super().__init__()
         self.transformer = transformer
+        # Freeze transformer
+        for name, parameter in self.transformer.named_parameters():
+            parameter.requires_grad_(False)
+
         hidden_dim = transformer.d_model
 
         self.num_feature_levels = num_feature_levels
@@ -47,7 +51,7 @@ class AnchorDETR(nn.Module):
             num_backbone_outs = len(backbone.strides)
             input_proj_list = []
             conv_strides = backbone.conv_strides_to_apply
-            k_sizes = backbone.k_size_strides_to_apply
+            k_sizes = backbone.k_size_to_apply
             for _ in range(num_backbone_outs):
                 in_channels = backbone.num_channels[_]
                 if _ == 0:
@@ -56,19 +60,37 @@ class AnchorDETR(nn.Module):
                         nn.GroupNorm(32, hidden_dim),
                     ))
                 else:
-                    input_proj_list.append(nn.Sequential(
-                        nn.Conv2d(in_channels, hidden_dim, kernel_size=k_sizes[_], stride=conv_strides[_]),
-                        nn.GroupNorm(32, hidden_dim),
-                    ))
+                    if conv_strides[_] == -1 :
+                        input_proj_list.append(nn.Sequential(
+                            nn.ConvTranspose2d(in_channels, hidden_dim, kernel_size=k_sizes[_], stride=2),
+                            nn.GroupNorm(32, hidden_dim),
+                        ))
+                    else:
+                        input_proj_list.append(nn.Sequential(
+                            nn.Conv2d(in_channels, hidden_dim, kernel_size=k_sizes[_], stride=conv_strides[_], padding="same"),
+                            nn.GroupNorm(32, hidden_dim),
+                        ))
             self.input_proj = nn.ModuleList(input_proj_list)
+
+            self.combined_projection = nn.ModuleList([
+                nn.Sequential(
+                    nn.Conv3d(3, 1, kernel_size=2, stride=1, padding="same"),
+                )])
         else:
             self.input_proj = nn.ModuleList([
                 nn.Sequential(
                     nn.Conv2d(backbone.num_channels[0], hidden_dim, kernel_size=1),
                     nn.GroupNorm(32, hidden_dim),
                 )])
+            self.combined_projection = None 
+
         self.backbone = backbone
         self.aux_loss = aux_loss
+
+        if self.combined_projection is not None:
+            for proj in self.input_proj:
+                nn.init.xavier_uniform_(proj[0].weight, gain=1)
+                nn.init.constant_(proj[0].bias, 0)
 
         for proj in self.input_proj:
             nn.init.xavier_uniform_(proj[0].weight, gain=1)
@@ -98,10 +120,16 @@ class AnchorDETR(nn.Module):
         for l, feat in enumerate(features):
             src, mask = feat.decompose()
             srcs.append(self.input_proj[l](src).unsqueeze(1))
+            # print(mask.shape)
             masks.append(mask)
             assert mask is not None
 
         srcs = torch.cat(srcs, dim=1)
+
+        # Fuse multiple outputs to just one. E.g. from torch.Size([6, 3, 256, 64, 64]) --> torch.Size([6, 1, 256, 64, 64])
+        if self.combined_projection is not None:
+            srcs = self.combined_projection[0](srcs)
+            masks = [masks[1]] # take only (6,64,64) tensor
 
         outputs_class, outputs_coord = self.transformer(srcs, masks)
 
@@ -370,23 +398,24 @@ def build(args):
     #     num_classes = 250
     device = torch.device(args.device)
 
+    if args.distillation:
+        from .cellSAM import get_model
+        model_teacher = get_model(None).eval()
+        model_teacher.bbox_threshold = 0.4 
+
     backbone = build_backbone(args)
 
-    transformer = build_transformer(args)
+    # transformer = build_transformer(args)
     model = AnchorDETR(
         backbone,
-        transformer,
+        copy.deepcopy(model_teacher.cellfinder.decode_head.transformer),
         num_feature_levels=args.num_feature_levels,
         aux_loss=args.aux_loss
     )
     if args.masks:
         model = DETRsegm(model, freeze_detr=(args.frozen_weights is not None))
 
-    if args.distillation:
-        from .cellSAM import get_model
-        model_teacher = get_model(None).eval()
-        model_teacher.bbox_threshold = 0.4 
-
+    # import pdb; pdb.set_trace()
     matcher = build_matcher(args)
     weight_dict = {'loss_ce': args.cls_loss_coef, 'loss_bbox': args.bbox_loss_coef}
     weight_dict['loss_giou'] = args.giou_loss_coef

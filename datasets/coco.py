@@ -217,6 +217,7 @@ def make_coco_transforms(image_set, sam2=False):
                 T.RandomBrightness([-0.2, 0.2]),
                 T.RandomContrast([-0.2, 0.2]),
             ),
+            T.RandomCrop([scales[0],scales[0]]),
             T.SquareRandomResize(scales),
             normalize,
         ])

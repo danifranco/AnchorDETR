@@ -74,13 +74,13 @@ class BackboneBase(nn.Module):
             self.strides = [8, 16, 32]
             self.num_channels = [512, 1024, 2048]
             self.conv_strides_to_apply = [2,1,1]
-            self.k_size_strides_to_apply = [3,1,1]
+            self.k_size_to_apply = [3,1,1]
         else:
             return_layers = {'layer4': "0"}
             self.strides = [32]
             self.num_channels = [2048]
             self.conv_strides_to_apply = []
-            self.k_size_strides_to_apply = []
+            self.k_size_to_apply = []
             
         self.body = IntermediateLayerGetter(backbone, return_layers=return_layers)
 
@@ -176,10 +176,10 @@ class SAM2_Backbone(nn.Module):
         if return_interm_layers:
             self.num_channels = [256,256,256]
             self.strides = [4,8,16]
-            self.conv_strides_to_apply = [4,2,1]
-            self.k_size_strides_to_apply = [4,1,1]
+            self.conv_strides_to_apply = [2,1,-1]
+            self.k_size_to_apply = [4,2,2]
         else:
-            self.num_channels = [768]
+            self.num_channels = [256]
             self.strides = [16]
 
     def forward(self, tensor_list: NestedTensor):
@@ -194,8 +194,8 @@ class SAM2_Backbone(nn.Module):
                 (Pdb) xs['backbone_fpn'][2].shape
                 torch.Size([1, 256, 40, 36])
         """
-        # x = self.encoder(tensor_list.tensors)
-        # # print(x['vision_features'].shape) # torch.Size([1, 256, 64, 64])
+        # x = self.encoder(tensor_list.tensors)['vision_features']
+        # # print(x.shape) # torch.Size([1, 256, 64, 64])
         # m = tensor_list.mask  
         # assert m is not None
         # mask = F.interpolate(m[None].float(), size=x.shape[-2:]).to(torch.bool)[0]
